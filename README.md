@@ -436,6 +436,86 @@ java -jar testlibrary-wrapper/target/testlibrary-wrapper-shell.jar \
 - Shell 的 `loginAs` / `logout` 仅用于测试时切换身份，日常使用默认就是 admin
 - web 与 shell 跨进程共享数据时，使用同一 DuckDB 和 `SPRING_PROFILES_ACTIVE=jdbc`
 
+## 认证与鉴权
+
+认证与鉴权的通用部分参考历史项目的做法收敛在 core，外部项目负责接入自己的登录方式。
+
+### core
+
+core 只提供与传输无关的基础能力：
+
+- `@RequireLogin`、`@RequirePriority({"admin"})`
+- AOP 统一校验，方法或类上标注即可
+- `SessionUser` 保存用户信息和 `roleList`
+- 端口：
+  - `CurrentUserProvider`：当前用户来源
+  - `SessionStore` / `SessionService`：会话读写
+  - `UserAccountStore`：账号和密码哈希
+- 默认实现：
+  - 内存 `MapSessionRepository`
+  - 默认管理员 `admin`
+  - `LocalLockService` 等基础组件
+
+core 不引入 Spring Security，也不处理 cookie、HTTP 状态码、SSO 协议等传输细节。
+
+### 外部接入
+
+web 项目当前实现了简单登录：
+
+- `LoginController` 校验 `UserAccountStore` 中的账号
+- 密码使用 BCrypt 哈希，不保存明文
+- 登录成功后创建 `SessionUser`，通过 `SessionService` / `SessionStore` 写入 session
+- `SessionUserFilter` 从 `KERNEL_SESSION` cookie 取出 session id，绑定到 `SessionContext`
+- 权限校验仍由 core 的 `@RequireLogin` / `@RequirePriority` 完成
+
+要接入外部 SSO 时，在外部项目实施，不修改 core：
+
+- 新增 SSO 回调/校验类，把 IdP 返回的身份转成 `SessionUser`
+- 调用 `SessionService` 建立 session，或提供自己的 `CurrentUserProvider`
+- 可以替换 `LoginController`，也可以保留本地账号登录作为 fallback
+- Spring Security、OAuth2/OIDC、SAML 依赖只放在外部项目
+
+Shell 默认以管理员身份运行，不需要走登录流程；`loginAs` 只用于测试时切换用户。
+
+### spring-session 与 Redis
+
+core 默认使用 `MapSessionRepository`，适合单进程演示。wrapper 可以统一指定 Spring Session
+使用 `spring-session-data-redis`，把会话持久化到外部 Redis：
+
+```xml
+<dependency>
+    <groupId>org.springframework.session</groupId>
+    <artifactId>spring-session-data-redis</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+</dependency>
+```
+
+配置示例：
+
+```
+spring.data.redis.host=127.0.0.1
+spring.data.redis.port=6379
+spring.session.redis.namespace=testlibrary
+spring.session.redis.flush-mode=on_save
+spring.session.redis.save-mode=on_set_attribute
+```
+
+使用 JSON 序列化时提供一个 `RedisSerializer` Bean：
+
+```java
+@Bean
+RedisSerializer<Object> springSessionDefaultRedisSerializer() {
+    return new GenericJackson2JsonRedisSerializer();
+}
+```
+
+这样 session 中的 `SessionUser`、角色列表等对象会以 JSON 保存到 Redis，而不是 JDK 序列化。
+使用 Redis 时，wrapper 需要用自己的 `SessionRepository` / `SessionStore` 实现覆盖 core 的默认
+内存实现，通常加 `@Primary` 或在配置中排除默认 Bean。
+
 ## Web
 
 打开 `http://127.0.0.1:8080/`。
