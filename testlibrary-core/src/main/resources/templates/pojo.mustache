@@ -1,0 +1,20 @@
+package {{package}};
+
+import java.util.List;
+
+public class {{classname}} {
+
+{{#vars}}
+    private {{{datatypeWithEnum}}} {{name}};
+{{/vars}}
+
+{{#vars}}
+    public {{{datatypeWithEnum}}} {{getter}}() {
+        return {{name}};
+    }
+
+    public void {{setter}}({{{datatypeWithEnum}}} {{name}}) {
+        this.{{name}} = {{name}};
+    }
+{{/vars}}
+}

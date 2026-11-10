@@ -1,0 +1,3 @@
+loginAs --username user --roles user
+whoami
+addBookingItem --title "should-fail"

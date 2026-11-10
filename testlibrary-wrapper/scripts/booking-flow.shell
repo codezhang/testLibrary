@@ -1,0 +1,12 @@
+addUser --userId 2001 --username user
+addBookingItem --title "测试书目"
+bookingList --pageNum 1 --pageSize 10
+loginAs --username user --roles user
+whoami
+bookingList --pageNum 1 --pageSize 10
+borrowBooking --itemIds 1
+myBookings
+releaseBooking --itemIds 1
+myBookings
+logout
+whoami

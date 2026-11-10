@@ -1,0 +1,365 @@
+openapi: 3.1.0
+info:
+  title: TestLibrary Core API
+  description: 用户与预约接口（纯 Java core 的 OpenAPI 源）
+  version: "1.0.0"
+tags:
+  - name: GetUser
+    description: 根据 id 查询用户
+  - name: SaveUser
+    description: 保存用户
+  - name: RequireBookingResource
+    description: 批量借出预约条目
+  - name: ReleaseBookingResource
+    description: 批量归还预约条目
+  - name: GetUserBorrowed
+    description: 当前用户已借出的条目
+  - name: GetBookingItemList
+    description: 分页查询预约条目
+  - name: AddNewBookingItem
+    description: 新增预约条目（管理员）
+  - name: RemoveBookingItem
+    description: 删除预约条目（管理员）
+  - name: ActivateBookingItem
+    description: 启用预约条目（管理员）
+  - name: DeactivateBookingItem
+    description: 停用预约条目（管理员）
+servers:
+  - url: http://127.0.0.1:8080
+
+paths:
+  /kernel/booking/borrow:
+    post:
+      tags: [RequireBookingResource]
+      operationId: requireBookingResource
+      summary: 批量借出预约条目
+      description: 任一资源不可借时整批失败
+      x-kernel-response-type: Void
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingBatchRequest"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelRespVoid"
+
+  /kernel/booking/return:
+    post:
+      tags: [ReleaseBookingResource]
+      operationId: releaseBookingResource
+      summary: 批量归还预约条目
+      description: 只能归还当前用户借出的条目
+      x-kernel-response-type: Void
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingBatchRequest"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelRespVoid"
+
+  /kernel/books/userBorrowed:
+    get:
+      tags: [GetUserBorrowed]
+      operationId: getUserBorrowed
+      summary: 当前用户已借出的条目
+      x-kernel-response-type: "List<BookingItem>"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelRespBookingItemList"
+
+  /kernel/books/list:
+    get:
+      tags: [GetBookingItemList]
+      operationId: getBookingItemList
+      summary: 分页查询预约条目
+      x-kernel-response-type: "List<BookingItem>"
+      parameters:
+        - name: pageNum
+          in: query
+          required: false
+          description: 页码，从 1 开始
+          schema:
+            type: integer
+            format: int32
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          description: 每页条数
+          schema:
+            type: integer
+            format: int32
+            default: 10
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelRespBookingItemList"
+
+  /kernel/books/add:
+    post:
+      tags: [AddNewBookingItem]
+      operationId: addNewBookingItem
+      summary: 新增预约条目（管理员）
+      x-kernel-response-type: BookingItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingAddRequest"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelRespBookingItem"
+
+  /kernel/books/remove:
+    post:
+      tags: [RemoveBookingItem]
+      operationId: removeBookingItem
+      summary: 删除预约条目（管理员）
+      description: 借出中的条目不能删除
+      x-kernel-response-type: Void
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingItemIdRequest"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelRespVoid"
+
+  /kernel/books/activate:
+    post:
+      tags: [ActivateBookingItem]
+      operationId: activateBookingItem
+      summary: 启用预约条目（管理员）
+      x-kernel-response-type: Void
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingItemIdRequest"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelRespVoid"
+
+  /kernel/books/deactivate:
+    post:
+      tags: [DeactivateBookingItem]
+      operationId: deactivateBookingItem
+      summary: 停用预约条目（管理员）
+      x-kernel-response-type: Void
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingItemIdRequest"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelRespVoid"
+  /kernel/user/get:
+    get:
+      tags: [GetUser]
+      operationId: getUser
+      summary: 根据id获取用户
+      description: 传入用户id查询用户详情
+      x-kernel-response-type: UserDTO
+      parameters:
+        - name: req
+          in: query
+          required: true
+          description: 用户id
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelRespUserDTO"
+
+  /kernel/user/save:
+    post:
+      tags: [SaveUser]
+      operationId: saveUser
+      summary: 保存用户
+      description: 新增/更新用户
+      x-kernel-response-type: Void
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserSaveReq"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KernelRespVoid"
+
+components:
+  schemas:
+    UserDTO:
+      type: object
+      required: [userId, username]
+      properties:
+        userId:
+          type: integer
+          format: int64
+          description: 用户主键
+        username:
+          type: string
+          description: 用户名
+        age:
+          type: integer
+          format: int32
+          description: 年龄
+
+    UserSaveReq:
+      type: object
+      required: [username]
+      properties:
+        userId:
+          type: integer
+          format: int64
+          description: 用户id，新增不传
+        username:
+          type: string
+          description: 用户名
+
+    KernelRespUserDTO:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        msg:
+          type: string
+        data:
+          $ref: "#/components/schemas/UserDTO"
+
+    KernelRespVoid:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        msg:
+          type: string
+        data: {}
+
+    BookingItem:
+      type: object
+      required: [itemId, title, status]
+      properties:
+        itemId:
+          type: integer
+          format: int64
+          description: 预约条目主键
+        title:
+          type: string
+          description: 条目标题
+        previewContent:
+          type: string
+          maxLength: 2000
+          description: 预览内容，最多 2000 字
+        status:
+          type: string
+          description: "状态：AVAILABLE / LENT / INACTIVE"
+        borrowedBy:
+          type: string
+          description: 借出人 userId，未借出时为空
+
+    BookingBatchRequest:
+      type: object
+      required: [itemIds]
+      properties:
+        itemIds:
+          type: array
+          description: 待借出/归还的条目 id
+          items:
+            type: integer
+            format: int64
+
+    BookingAddRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          description: 新条目名称
+
+    BookingItemIdRequest:
+      type: object
+      required: [itemId]
+      properties:
+        itemId:
+          type: integer
+          format: int64
+          description: 预约条目 id
+
+    KernelRespBookingItem:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        msg:
+          type: string
+        data:
+          $ref: "#/components/schemas/BookingItem"
+
+    KernelRespBookingItemList:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        msg:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookingItem"

@@ -1,0 +1,42 @@
+package {{package}};
+
+import org.example.core.KernelResp;
+import {{modelPackage}}.*;
+
+import java.util.List;
+
+public final class {{classname}} {
+
+{{#operations}}
+{{#operation}}
+    public static final String path = "{{{path}}}";
+    public static final String fullPath = "{{{path}}}";
+    public static final String httpMethod = "{{httpMethod}}";
+
+    private {{classname}}() {
+    }
+{{^bodyParam}}
+    public static final class RequestBody {
+{{#allParams}}
+        private {{{dataType}}} {{paramName}};
+
+        public {{{dataType}}} get{{#lambda.titlecase}}{{paramName}}{{/lambda.titlecase}}() {
+            return {{paramName}};
+        }
+
+        public void set{{#lambda.titlecase}}{{paramName}}{{/lambda.titlecase}}({{{dataType}}} {{paramName}}) {
+            this.{{paramName}} = {{paramName}};
+        }
+{{/allParams}}
+    }
+{{/bodyParam}}
+{{#bodyParam}}
+    public static final class RequestBody extends {{{dataType}}} {
+    }
+{{/bodyParam}}
+
+    public static final class ResponseBody extends KernelResp<{{{vendorExtensions.x-kernel-response-type}}}> {
+    }
+{{/operation}}
+{{/operations}}
+}

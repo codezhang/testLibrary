@@ -1,0 +1,3 @@
+addUser --userId 2001 --username alice --password alice123 --roles user
+addBookingItem --title "Web 借阅测试"
+whoami

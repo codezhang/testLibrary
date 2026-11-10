@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.persistence.jdbc.mybatis.mapper.MybatisPlusBookingTransactionMapper">
+
+    <resultMap id="BookingItemMap" type="org.example.core.model.BookingItem">
+        <id property="itemId" column="item_id"/>
+        <result property="title" column="title"/>
+        <result property="previewContent" column="preview_content"/>
+        <result property="status" column="status"/>
+        <result property="borrowedBy" column="borrowed_by"/>
+    </resultMap>
+
+    
+    <update id="updateLent">
+        UPDATE booking_item
+        SET status = 'LENT',
+            borrowed_by = #{userId},
+            version = version + 1
+        WHERE item_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND status = 'AVAILABLE'
+        AND (SELECT COUNT(*)
+             FROM booking_item
+             WHERE item_id IN
+             <foreach collection="ids" item="id" open="(" separator="," close=")">
+                 #{id}
+             </foreach>
+             AND status = 'AVAILABLE') = #{count}
+    </update>
+
+    <update id="updateAvailable">
+        UPDATE booking_item
+        SET status = 'AVAILABLE',
+            borrowed_by = NULL,
+            version = version + 1
+        WHERE item_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND status = 'LENT'
+        AND borrowed_by = #{userId}
+        AND (SELECT COUNT(*)
+             FROM booking_item
+             WHERE item_id IN
+             <foreach collection="ids" item="id" open="(" separator="," close=")">
+                 #{id}
+             </foreach>
+             AND status = 'LENT'
+             AND borrowed_by = #{userId}) = #{count}
+    </update>
+
+    <select id="getMarkedByUser" resultMap="BookingItemMap">
+        SELECT item_id, title, preview_content, status, borrowed_by
+        FROM booking_item
+        WHERE status = 'LENT'
+          AND borrowed_by = #{userId}
+        ORDER BY item_id
+    </select>
+
+    <select id="getAll" resultMap="BookingItemMap">
+        SELECT item_id, title, preview_content, status, borrowed_by
+        FROM booking_item
+        ORDER BY item_id
+    </select>
+
+    <insert id="insertItem">
+        INSERT INTO booking_item (item_id, title, preview_content, status)
+        VALUES (#{itemId}, #{title}, #{previewContent}, 'AVAILABLE')
+    </insert>
+
+    <update id="deactivate">
+        UPDATE booking_item
+        SET status = 'INACTIVE',
+            version = version + 1
+        WHERE item_id = #{itemId}
+          AND status = 'AVAILABLE'
+    </update>
+
+    <update id="activate">
+        UPDATE booking_item
+        SET status = 'AVAILABLE',
+            version = version + 1
+        WHERE item_id = #{itemId}
+          AND status = 'INACTIVE'
+    </update>
+
+    <delete id="remove">
+        DELETE FROM booking_item
+        WHERE item_id = #{itemId}
+          AND status &lt;&gt; 'LENT'
+    </delete>
+</mapper>

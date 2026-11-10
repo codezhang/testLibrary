@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TestLibrary 借阅台</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+            background: #f2f5f9;
+            color: #24324a;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 40px 16px;
+        }
+        [v-cloak] { display: none; }
+        .card {
+            width: 100%;
+            max-width: 920px;
+            background: #fff;
+            border-radius: 14px;
+            box-shadow: 0 12px 36px rgba(24, 43, 76, .1);
+            padding: 28px;
+        }
+        .login { max-width: 380px; }
+        h1, h2 { margin: 0 0 18px; font-weight: 600; }
+        h1 { font-size: 22px; }
+        h2 { font-size: 20px; }
+        label { display: block; margin-bottom: 6px; font-size: 13px; color: #5b6b85; }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+            border: 1px solid #d5deea;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+        }
+        input[type="text"]:focus, input[type="password"]:focus { border-color: #3b82f6; }
+        button {
+            border: none;
+            border-radius: 8px;
+            padding: 9px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            background: #3b82f6;
+            color: #fff;
+        }
+        button:disabled { background: #9db8e8; cursor: not-allowed; }
+        button.ghost { background: #eef2f8; color: #40506a; }
+        button.danger { background: #ef4444; }
+        .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .user { font-size: 14px; color: #5b6b85; }
+        .role {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 8px;
+            border-radius: 999px;
+            background: #e8f0ff;
+            color: #2b64c9;
+            font-size: 12px;
+        }
+        .tabs { display: flex; gap: 10px; margin: 22px 0 16px; }
+        .tabs button.active { background: #24324a; }
+        .notice {
+            margin: 0 0 14px;
+            padding: 9px 12px;
+            border-radius: 8px;
+            background: #f3f7ff;
+            color: #34507a;
+            font-size: 13px;
+        }
+        .error { color: #d21f3c; font-size: 13px; margin: 10px 0 0; min-height: 18px; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { padding: 10px 8px; border-bottom: 1px solid #edf1f7; text-align: left; }
+        th { color: #6b7c95; font-weight: 500; font-size: 13px; }
+        tr:hover td { background: #f8fafd; }
+        .status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            background: #e9f7ee;
+            color: #1f8a4c;
+        }
+        .status.lent { background: #fff3e6; color: #b45309; }
+        .status.inactive { background: #f2f3f5; color: #6b7280; }
+        .actions { margin-top: 18px; display: flex; gap: 10px; }
+        .hint { color: #7b8aa1; font-size: 13px; }
+        .tip { margin-top: 16px; color: #8a98ad; font-size: 12px; line-height: 1.6; }
+        button.small { padding: 4px 10px; font-size: 12px; }
+        .modal-mask {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, .45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 10;
+        }
+        .modal {
+            width: 100%;
+            max-width: 640px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            background: #fff;
+            border-radius: 12px;
+            padding: 22px;
+        }
+        .modal h2 { margin: 0; font-size: 18px; }
+        .modal-body {
+            overflow: auto;
+            white-space: pre-wrap;
+            line-height: 1.8;
+            font-size: 14px;
+            color: #334155;
+            background: #f8fafd;
+            border-radius: 8px;
+            padding: 14px;
+        }
+    </style>
+</head>
+<body>
+<div id="app" v-cloak>
+    <!-- 登录 -->
+    <div v-if="!loggedIn" class="card login">
+        <h1>TestLibrary 借阅台</h1>
+        <label>用户名</label>
+        <input type="text" v-model.trim="loginForm.username" placeholder="admin 或任意用户名" @keyup.enter="login">
+        <label>密码</label>
+        <input type="password" v-model="loginForm.password" placeholder="演示环境：任意非空密码" @keyup.enter="login">
+        <button @click="login" :disabled="loading" style="width:100%">{{ loading ? '登录中...' : '登录' }}</button>
+        <p class="error">{{ error }}</p>
+        <p class="tip">
+            账号通过 Shell 的 <b>addUser</b> 创建（含密码）；内置管理员为 <b>admin / admin123</b>。<br>
+            登录成功后用户信息保存在服务端 session 中，浏览器只持有 session cookie。
+        </p>
+    </div>
+
+    <!-- 主界面 -->
+    <div v-else class="card">
+        <div class="row">
+            <div>
+                <h1 style="margin-bottom:6px">借阅台</h1>
+                <div class="user">
+                    当前用户：{{ user.username }}
+                    <span v-for="role in user.roleList" :key="role" class="role">{{ role }}</span>
+                </div>
+            </div>
+            <button class="ghost" @click="logout">退出登录</button>
+        </div>
+
+        <div class="tabs">
+            <button :class="{ active: mode === 'borrowed' }" @click="switchMode('borrowed')">1. 已借书籍</button>
+            <button :class="{ active: mode === 'all' }" @click="switchMode('all')">2. 全部书籍</button>
+        </div>
+
+        <p v-if="message" class="notice">{{ message }}</p>
+
+        <div v-if="loading" class="hint">加载中...</div>
+        <table v-else-if="items.length">
+            <thead>
+            <tr>
+                <th style="width:48px">选择</th>
+                <th style="width:70px">ID</th>
+                <th>标题</th>
+                <th style="width:78px">预览</th>
+                <th style="width:100px">状态</th>
+                <th style="width:120px">借出人</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="item in items" :key="item.itemId">
+                <td><input type="checkbox" :value="item.itemId" v-model="selected"></td>
+                <td>{{ item.itemId }}</td>
+                <td>{{ item.title }}</td>
+                <td><button class="ghost small" @click="openPreview(item)">预览</button></td>
+                <td><span class="status" :class="statusClass(item.status)">{{ statusText(item.status) }}</span></td>
+                <td>{{ item.borrowedBy || '-' }}</td>
+            </tr>
+            </tbody>
+        </table>
+        <p v-else class="hint">{{ emptyHint }}</p>
+
+        <div class="actions" v-if="items.length">
+            <button v-if="mode === 'borrowed'" class="danger" :disabled="!selected.length" @click="returnItems">
+                归还选中（{{ selected.length }}）
+            </button>
+            <button v-else :disabled="!selected.length" @click="borrowItems">
+                借出选中（{{ selected.length }}）
+            </button>
+            <button class="ghost" @click="load">刷新</button>
+        </div>
+
+        <p class="tip">
+            已借书籍页只能操作当前用户借出的条目；全部书籍页会自动过滤掉已借出和停用的条目。
+        </p>
+    </div>
+
+    <!-- 预览弹窗 -->
+    <div v-if="previewItem" class="modal-mask" @click.self="closePreview">
+        <div class="modal">
+            <div class="row">
+                <h2>{{ previewItem.title }}</h2>
+                <button class="ghost" @click="closePreview">关闭</button>
+            </div>
+            <div class="modal-body">{{ previewItem.previewContent || '暂无预览内容' }}</div>
+            <div class="hint">预览内容最多 2000 字</div>
+        </div>
+    </div>
+</div>
+
+<script src="/vendor/vue.global.prod.js"></script>
+<script>
+    const { createApp } = Vue;
+
+    createApp({
+        data() {
+            return {
+                loggedIn: false,
+                user: null,
+                loginForm: { username: 'alice', password: 'alice123' },
+                mode: 'borrowed',
+                items: [],
+                selected: [],
+                previewItem: null,
+                loading: false,
+                error: '',
+                message: ''
+            };
+        },
+        computed: {
+            emptyHint() {
+                return this.mode === 'all'
+                    ? '暂时没有可借的书籍（已借出/停用条目已过滤）'
+                    : '当前没有已借书籍';
+            }
+        },
+        mounted() {
+            this.restore();
+        },
+        methods: {
+            async api(path, options = {}) {
+                const opts = { credentials: 'same-origin', ...options };
+                opts.headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+                if (opts.body && typeof opts.body !== 'string') {
+                    opts.body = JSON.stringify(opts.body);
+                }
+                const response = await fetch(path, opts);
+                if (response.status === 401) {
+                    this.loggedIn = false;
+                    this.user = null;
+                    throw new Error('未登录或会话已失效，请重新登录');
+                }
+                if (response.status === 403) {
+                    throw new Error('没有权限执行该操作');
+                }
+                let body;
+                try {
+                    body = await response.json();
+                } catch (e) {
+                    throw new Error('响应解析失败');
+                }
+                if (!response.ok || body.code !== 0) {
+                    throw new Error(body.msg || ('请求失败（' + response.status + '）'));
+                }
+                return body.data;
+            },
+            async restore() {
+                try {
+                    this.user = await this.api('/api/me');
+                    this.loggedIn = true;
+                    await this.load();
+                } catch (e) {
+                    // 未登录时忽略
+                }
+            },
+            async login() {
+                this.error = '';
+                this.loading = true;
+                try {
+                    this.user = await this.api('/api/login', { method: 'POST', body: this.loginForm });
+                    this.loggedIn = true;
+                    this.mode = 'borrowed';
+                    await this.load();
+                } catch (e) {
+                    this.error = e.message;
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async logout() {
+                try {
+                    await this.api('/api/logout', { method: 'POST' });
+                } catch (e) {
+                    // 忽略登出失败，直接回到登录页
+                } finally {
+                    this.loggedIn = false;
+                    this.user = null;
+                    this.items = [];
+                    this.selected = [];
+                    this.message = '';
+                    this.error = '';
+                }
+            },
+            async switchMode(mode) {
+                this.mode = mode;
+                this.selected = [];
+                this.message = '';
+                await this.load();
+            },
+            async load() {
+                if (!this.loggedIn) {
+                    return;
+                }
+                this.loading = true;
+                this.message = '';
+                this.selected = [];
+                try {
+                    if (this.mode === 'borrowed') {
+                        this.items = await this.api('/kernel/books/userBorrowed') || [];
+                    } else {
+                        const all = await this.api('/kernel/books/list?pageNum=1&pageSize=100') || [];
+                        this.items = all.filter(item => item.status === 'AVAILABLE');
+                    }
+                } catch (e) {
+                    this.items = [];
+                    this.message = e.message;
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async returnItems() {
+                if (!this.selected.length) {
+                    return;
+                }
+                try {
+                    await this.api('/kernel/booking/return', {
+                        method: 'POST',
+                        body: { itemIds: this.selected }
+                    });
+                    await this.load();
+                    this.message = '归还成功';
+                } catch (e) {
+                    this.message = e.message;
+                }
+            },
+            async borrowItems() {
+                if (!this.selected.length) {
+                    return;
+                }
+                try {
+                    await this.api('/kernel/booking/borrow', {
+                        method: 'POST',
+                        body: { itemIds: this.selected }
+                    });
+                    await this.load();
+                    this.message = '借出成功';
+                } catch (e) {
+                    this.message = e.message;
+                }
+            },
+            openPreview(item) {
+                this.previewItem = item;
+            },
+            closePreview() {
+                this.previewItem = null;
+            },
+            statusText(status) {
+                return { AVAILABLE: '可借', LENT: '已借', INACTIVE: '停用' }[status] || status;
+            },
+            statusClass(status) {
+                return status === 'LENT' ? 'lent' : (status === 'INACTIVE' ? 'inactive' : '');
+            }
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
