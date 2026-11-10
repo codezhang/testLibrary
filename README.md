@@ -205,6 +205,91 @@ testlibrary-persistence-jdbc/src/main/resources/db/postgresql/data.sql
 
 `testlibrary-persistence-jdbc` 只是 `BookingTransactionMapper` 的一种实现，使用 PostgreSQL 方言 SQL 跑在 DuckDB/PostgreSQL 上。接入其他数据库或存储时，实现 `org.example.core.mapper.BookingTransactionMapper`，由 wrapper 选择对应 Bean 即可，core 和传输层不需要改动。
 
+批量借出/归还可以直接写成 MyBatis MERGE，不需要在另外的子 SQL 里重复拼 ids：
+
+```java
+int mergeLent(@Param("items") List<BookingItem> items,
+              @Param("userId") String userId);
+```
+
+```xml
+<update id="mergeLent">
+    MERGE INTO booking_item AS t
+    USING (
+        SELECT item_id FROM (
+            SELECT -1 AS item_id
+            <foreach collection="items" item="item" separator=" UNION ALL ">
+                SELECT #{item.itemId}
+            </foreach>
+        ) base
+        WHERE item_id &lt;&gt; -1
+    ) s
+    ON t.item_id = s.item_id
+       AND s.item_id &lt;&gt; -1
+    WHEN MATCHED AND t.status = 'AVAILABLE' THEN
+        UPDATE SET status = 'LENT',
+                   borrowed_by = #{userId},
+                   version = t.version + 1
+</update>
+```
+
+- 直接遍历 `items`，引用 `#{item.itemId}`，不需要另外构造 ids 列表
+- `SELECT -1 AS item_id` 作为哨兵行：`items` 为空时 SQL 仍然合法
+- `SELECT ... FROM ...` 不依赖 MySQL 的 `dual`，可直接用于 DuckDB / PostgreSQL
+- `item_id <> -1` 和 `s.item_id <> -1` 避免哨兵行参与匹配
+- DuckDB 和 PostgreSQL 15+ 支持该语法
+- 需要“全部成功或全部失败”时，在同一事务里执行 MERGE 并检查受影响行数
+- 当前示例仍保留 UPDATE + COUNT 子查询的写法，便于兼容旧版 PostgreSQL；两种方式都通过 `BookingTransactionMapper` 接口接入
+- mybatis xml 的文件中 空格可能不规范，可以在统一的流水线中加入xml和sql两级lint规范
+
+### 扩展其他持久化实现
+
+如果目标数据库是 MySQL，或需要 JPA / Redis / 远程存储等其他方式，不需要修改现有项目，
+新建一个持久化实现项目即可：
+
+```
+testlibrary-persistence-mysql
+├── pom.xml                         # 依赖 testlibrary-core
+└── src/main
+    ├── java/.../MysqlBookingTransactionMapper.java
+    ├── java/.../MysqlUserAccountStore.java
+    ├── java/.../MysqlPersistenceConfiguration.java
+    └── resources/db/mysql/schema.sql
+```
+
+依赖方向：
+
+```
+testlibrary-core ← testlibrary-persistence-mysql
+testlibrary-persistence-mysql ← wrapper
+```
+
+实现内容：
+
+- 实现 `org.example.core.mapper.BookingTransactionMapper`
+- 实现 `org.example.core.auth.port.UserAccountStore`
+- 在配置类中提供对应 Bean
+- wrapper 依赖该模块，并在 `library.persistence` 或 Maven profile 中选择它
+
+示例选择配置：
+
+```java
+@Configuration
+@ConditionalOnProperty(name = "library.persistence", havingValue = "mysql")
+@Import(MysqlPersistenceConfiguration.class)
+public class MysqlPersistenceSelectionConfiguration {
+}
+```
+
+MySQL 方言注意点：
+
+- MySQL 不支持 PostgreSQL 的 `MERGE`，批量操作可使用事务 + 条件 UPDATE + 受影响行数校验
+- 需要行锁时使用 `SELECT ... FOR UPDATE`，并和业务操作保持相同的加锁顺序
+- DDL 放到新模块自己的 `db/mysql/schema.sql`，不修改现有 PostgreSQL/DuckDB 脚本
+- 用户名、密码、连接池配置可以使用新的 `library.mysql.*` 前缀
+
+这样 core、web、shell 都不需要改动，只需要在 wrapper 中增加依赖并选择新的持久化实现。
+
 ### 跨进程共享数据
 
 web 模式与 shell 模式是两个独立进程。内存模式下数据不共享；需要“Shell 建用户/书，再在 Web 登录借阅”时，使用同一份 JDBC 数据：
@@ -242,6 +327,46 @@ java -Dspring.profiles.active=jdbc \
 在 IDE 中可以使用 OpenAPI Specifications / Swagger 插件编辑和校验 YAML；修改契约后执行 Maven
 `generate-sources`，或开启 IDEA 的 Delegate build to Maven，生成源码会同步刷新。
 生成目录是源码根，不应手工编辑。
+
+### IDEA 配置
+
+1. 可选：在 Plugins 中安装 OpenAPI Specifications 或 Swagger 插件，用于 YAML 补全和校验。
+2. 修改契约后，在 Maven 工具窗口执行：
+
+   ```
+   testlibrary-core → Lifecycle → generate-sources
+   ```
+
+   或右键项目选择 `Maven → Generate Sources and Update Folders`。
+3. 希望每次 IDEA Build 都自动生成，开启：
+
+   ```
+   Settings → Build, Execution, Deployment → Build Tools → Maven → Runner
+   → Delegate IDE build/run actions to Maven
+   ```
+
+   开启后 IDEA 的构建等价于 Maven `compile`，会先触发 `generate-sources`。
+4. 生成目录 `testlibrary-core/target/generated-sources/openapi` 会自动注册为生成源码根。
+   如果 IDEA 未识别，执行 Maven Reload Project 后再查看。
+5. 不要直接修改生成目录中的代码；修改 OpenAPI 或 `templates/*.mustache` 后重新生成。
+
+### 其他 IDE / CI
+
+不使用 IDEA 时，直接用 Maven：
+
+```bash
+# 只生成 core 的 OpenAPI 代码
+mvn -pl testlibrary-core generate-sources
+
+# 生成并编译 core
+mvn -pl testlibrary-core -am compile
+
+# 在根目录执行全部模块的 generate-sources
+mvn generate-sources
+```
+
+生成器绑定在 `generate-sources` 阶段，所以 `mvn compile`、`mvn package` 之前都会自动执行，
+CI 不需要额外安装 IDE 插件。
 
 ## Shell
 
@@ -343,6 +468,46 @@ POST /kernel/books/add
 POST /kernel/books/deactivate
 POST /kernel/books/activate
 POST /kernel/books/remove
+```
+
+### 前端页面
+
+当前页面是为简化示例准备的嵌入式 Vue 单页（`static/index.html` + 本地 Vue 运行时），
+目的是方便直接打开演示，不作为生产前端方案。
+
+正式项目建议采用前后端分离：
+
+- 前端独立项目，通过 `/api/*`、`/kernel/*` 访问后端
+- 后端只保留接口和会话处理
+- 跨域部署时需要在 web 模块增加 CORS 配置，并处理 cookie / SameSite 策略
+
+### Swagger / OpenAPI 测试页
+
+Swagger UI 默认关闭，避免生产环境暴露。启动时带参数或启用 `swagger` profile：
+
+```bash
+# 方式一：profile
+SPRING_PROFILES_ACTIVE=swagger \
+  java -jar testlibrary-wrapper/target/testlibrary-wrapper-web.jar
+
+# 方式二：命令行参数
+java -jar testlibrary-wrapper/target/testlibrary-wrapper-web.jar \
+  --springdoc.api-docs.enabled=true \
+  --springdoc.swagger-ui.enabled=true
+```
+
+访问：
+
+```
+http://127.0.0.1:8080/swagger-ui.html
+http://127.0.0.1:8080/v3/api-docs
+```
+
+和 JDBC 同时使用：
+
+```bash
+SPRING_PROFILES_ACTIVE=jdbc,swagger \
+  java -jar testlibrary-wrapper/target/testlibrary-wrapper-web.jar
 ```
 
 ## 扩展点
